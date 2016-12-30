@@ -1,0 +1,30 @@
+#!/bin/bash
+
+ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source $ROOT/lxc-default.conf
+source ${1:-$PWD/lxc.conf}
+
+# Setup port-forwarding for the container's sshd
+if [[ $PF_SSH_ENABLE == "true" ]]; then
+    sudo lxc-start --daemon -n $CONTAINER
+    if [[ $? -ne 0 ]]; then
+        return $?
+    fi
+
+    # Wait till the container has a network interface running
+    CONTAINER_IP=
+    while [[ -z $CONTAINER_IP ]]; do
+        CONTAINER_IP=$(sudo lxc-info -n $CONTAINER -iH)
+        sleep 1
+    done
+
+    sudo iptables -t nat -A PREROUTING \
+        -p tcp --dport $PF_SSH_PORT -j DNAT \
+        --to-destination $CONTAINER_IP:22
+    sudo iptables -t nat -A POSTROUTING -j MASQUERADE
+    sudo iptables -F
+
+    sudo lxc-console -n $CONTAINER
+else
+    sudo lxc-start -n $CONTAINER
+fi
